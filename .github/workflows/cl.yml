@@ -1,0 +1,62 @@
+name: cl-on-windows
+
+# 目的：证明 cl.exe 只能在 Windows 上跑，以及它在 PATH 里的正确姿势是什么。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  # ── 对照组：什么都不配，直接找 cl ────────────────────────────
+  without-msvc:
+    name: 裸 runner 上 cl 存在吗
+    runs-on: windows-latest
+    steps:
+      - name: where cl
+        shell: cmd
+        run: |
+          where cl || echo [结论] 裸 runner 上没有 cl —— 它不是 Windows 自带的东西
+          echo.
+          echo 裸 runner 的系统盘里确实躺着 VS 的安装，只是没进 PATH：
+          dir /b "C:\Program Files\Microsoft Visual Studio\" 2>nul || echo (无)
+
+  # ── 实验组：先配 MSVC 环境，再用 cl 编译 ─────────────────────
+  with-msvc:
+    name: 配好 vcvars 后 cl 编译
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 这个 action 内部干的事就是 call vcvars64.bat
+      - name: 配 MSVC 环境变量
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: cl 到底装在哪、什么版本
+        shell: cmd
+        run: |
+          where cl
+          echo. ────────────────────────────
+          cl 2>&1
+        continue-on-error: true
+
+      - name: 手动验证 vcvars 的效果（PATH 里多出了什么）
+        shell: cmd
+        run: |
+          echo VCINSTALLDIR = %VCINSTALLDIR%
+          echo WindowsSDKVersion = %WindowsSdkVersion%
+
+      - name: 用 cl 编译 —— 斜杠参数登场
+        shell: cmd
+        run: cl /nologo /O2 /EHsc /std:c++20 hello.cpp /Fe:hello.exe
+
+      - name: 运行产物
+        shell: cmd
+        run: hello.exe
+
+      - name: 产物长什么样
+        shell: cmd
+        run: |
+          dir /b hello.*
+          dir hello.exe | findstr hello
